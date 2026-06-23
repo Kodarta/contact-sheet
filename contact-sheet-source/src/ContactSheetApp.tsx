@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   FolderPlus, FilePlus, Image as ImageIcon, Trash2, Settings, ArrowRight,
   UploadCloud, FileDown, CheckSquare, X, Search, Sun, Moon,
@@ -25,7 +25,7 @@ const DEFAULT_SETTINGS = {
   showFileNames: true,
   fileNameOpacity: 55,
   fileNameSize: 10,
-  imageScale: 100,
+  imageScale: 98,
 };
 
 // ---------------------------------------------------------------------------
@@ -666,6 +666,11 @@ const SheetEditor = ({ project, sheet, eff, updateSheet, onCommit, draggedItem, 
             <input type="range" min="10" max="100" value={eff.imageScale} onChange={(e) => updateSheet(sheet.id, (s: any) => ({ ...s, settingsOverride: { ...s.settingsOverride, imageScale: parseInt(e.target.value) } }))} className="w-20 accent-amber-500" />
             <span className="font-mono text-xs text-neutral-300 tabular-nums w-8">{eff.imageScale}%</span>
           </div>
+          {/* Filename toggle — quick access above the canvas */}
+          <label className="flex items-center gap-1.5 cursor-pointer px-3 border-r border-neutral-700" title="Show/hide filenames on frames">
+            <input type="checkbox" checked={eff.showFileNames} onChange={(e) => updateSheet(sheet.id, (s: any) => ({ ...s, settingsOverride: { ...s.settingsOverride, showFileNames: e.target.checked } }))} className="w-3.5 h-3.5 accent-amber-500" />
+            <span className="text-sm text-neutral-400 select-none">Filenames</span>
+          </label>
           <button onClick={autoFill} className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 px-3 py-2 rounded-lg text-sm font-semibold border border-amber-500/20 flex items-center gap-1.5 transition-colors"><ArrowRight size={15} /> Auto-fill</button>
           <button onClick={() => setIsFullscreen(!isFullscreen)} className="text-neutral-400 hover:text-amber-400 p-2 rounded-lg hover:bg-white/5 transition-colors" title="Fullscreen">{isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}</button>
           <button onClick={clearSheet} className="text-neutral-400 hover:text-red-500 p-2 rounded-lg hover:bg-white/5 transition-colors" title="Clear sheet"><Trash2 size={18} /></button>
@@ -692,13 +697,13 @@ const SheetEditor = ({ project, sheet, eff, updateSheet, onCommit, draggedItem, 
               )}
               <div
                 data-export-page="true"
-                className={`relative page-wrapper w-full ${aspectClass} overflow-hidden p-6 ${isExporting ? '' : 'shadow-2xl border ' + (draggedItem && dragOverPageId === page.id ? 'border-amber-400 ring-2 ring-amber-400/40' : 'border-neutral-800')}`}
+                className={`relative page-wrapper w-full ${aspectClass} overflow-hidden ${isExporting ? '' : 'shadow-2xl border ' + (draggedItem && dragOverPageId === page.id ? 'border-amber-400 ring-2 ring-amber-400/40' : 'border-neutral-800')}`}
                 style={{ backgroundColor: eff.bgColor || '#000' }}
                 onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; if (dragOverPageId !== page.id) setDragOverPageId(page.id); }}
                 onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOverPageId(null); }}
                 onDrop={handleDropOnSheet}
               >
-                <div className="w-full h-full grid gap-0 place-content-start" style={{ gridTemplateColumns: `repeat(${eff.columns}, minmax(0,1fr))`, gridTemplateRows: `repeat(${eff.rows}, minmax(0,1fr))` }}>
+                <div className="w-full h-full grid gap-0" style={{ gridTemplateColumns: `repeat(${eff.columns}, minmax(0,1fr))`, gridTemplateRows: `repeat(${eff.rows}, minmax(0,1fr))` }}>
                   {page.items.map((item: any) => {
                     const dragging = draggedItem?.item?.id === item.id;
                     const target = dragOverFrameId === item.id && !dragging;
