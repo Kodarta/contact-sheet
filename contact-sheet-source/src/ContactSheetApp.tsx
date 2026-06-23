@@ -257,9 +257,21 @@ const Toast = ({ message, type = 'info', onClose }: any) => {
 // ===========================================================================
 // Dashboard — project cards
 // ===========================================================================
-const DashboardView = ({ projects, isDark, onToggleTheme, onNewProject, onOpenProject, onDeleteProject }: any) => {
+const DashboardView = ({ projects, isDark, onToggleTheme, onNewProject, onOpenProject, onDeleteProject, onRenameProject }: any) => {
   const [q, setQ] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
   const filtered = projects.filter((p: any) => p.name.toLowerCase().includes(q.toLowerCase()));
+
+  const startRename = (e: any, project: any) => {
+    e.stopPropagation();
+    setEditingId(project.id);
+    setEditingName(project.name);
+  };
+  const commitRename = (id: string) => {
+    if (editingName.trim()) onRenameProject(id, editingName.trim());
+    setEditingId(null);
+  };
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 p-8 transition-colors">
       <div className="max-w-6xl mx-auto flex flex-col gap-8">
@@ -303,11 +315,31 @@ const DashboardView = ({ projects, isDark, onToggleTheme, onNewProject, onOpenPr
                   )}
                 </div>
                 <div className="p-5 flex justify-between items-start">
-                  <div className="cursor-pointer flex-1 min-w-0" onClick={() => onOpenProject(project.id)}>
-                    <h3 className="font-semibold text-lg text-neutral-800 dark:text-white line-clamp-1">{project.name}</h3>
-                    <p className="text-xs font-mono uppercase tracking-wider text-neutral-500 mt-1.5">{new Date(project.lastModified).toLocaleDateString()} · {sheets} sheets · {frames} frames</p>
+                  <div className="flex-1 min-w-0 mr-2">
+                    {editingId === project.id ? (
+                      <input
+                        autoFocus
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        onBlur={() => commitRename(project.id)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') commitRename(project.id); if (e.key === 'Escape') setEditingId(null); }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full font-semibold text-lg bg-transparent border-b-2 border-amber-500 outline-none text-neutral-800 dark:text-white"
+                      />
+                    ) : (
+                      <h3
+                        className="font-semibold text-lg text-neutral-800 dark:text-white line-clamp-1 cursor-pointer hover:text-amber-500 dark:hover:text-amber-400 transition-colors"
+                        onClick={() => onOpenProject(project.id)}
+                        onDoubleClick={(e) => startRename(e, project)}
+                        title="Double-click to rename"
+                      >{project.name}</h3>
+                    )}
+                    <p className="text-xs font-mono uppercase tracking-wider text-neutral-500 mt-1.5 cursor-pointer" onClick={() => onOpenProject(project.id)}>{new Date(project.lastModified).toLocaleDateString()} · {sheets} sheets · {frames} frames</p>
                   </div>
-                  <button onClick={(e) => { e.stopPropagation(); onDeleteProject(project.id); }} className="text-neutral-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 transition-colors" title="Delete project"><Trash2 size={18} /></button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={(e) => startRename(e, project)} className="text-neutral-400 hover:text-amber-400 p-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors" title="Rename project"><Edit2 size={15} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); onDeleteProject(project.id); }} className="text-neutral-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 transition-colors" title="Delete project"><Trash2 size={18} /></button>
+                  </div>
                 </div>
               </div>
             );
@@ -973,7 +1005,11 @@ export default function ContactSheetApp() {
           <DashboardView projects={projects} isDark={isDark} onToggleTheme={toggleTheme}
             onNewProject={() => setNewProjModal({ open: true, name: '', columns: 4, rows: 6, orientation: 'portrait' })}
             onOpenProject={openProjectAt}
-            onDeleteProject={(id: string) => setDeleteProjModal({ open: true, id })} />
+            onDeleteProject={(id: string) => setDeleteProjModal({ open: true, id })}
+            onRenameProject={(id: string, name: string) => {
+              const proj = projects.find((p: any) => p.id === id);
+              if (proj) { const updated = { ...proj, name, lastModified: Date.now() }; persist(updated); }
+            }} />
         </div>
       ) : openProject ? (
         <div className="flex w-full h-full">
