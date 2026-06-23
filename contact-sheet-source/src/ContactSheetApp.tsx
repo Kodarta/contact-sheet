@@ -633,31 +633,112 @@ const SheetEditor = ({ project, sheet, eff, updateSheet, onCommit, draggedItem, 
     addToast(`Placed ${sel.length} ${sel.length === 1 ? 'photo' : 'photos'}.`, 'success');
   };
 
-  // ---- PDF export: one page per sheet page, full-bleed (no slicing) --------
+  // ---- PDF export: draw each page onto a canvas directly (no DOM layout issues) --------
   const handleExportPDF = async () => {
     setIsExporting(true);
     addToast('Building your PDF…', 'info');
     await nextPaint();
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 100));
     let stage = 'starting';
     try {
       stage = 'loading export libraries';
-      const html2canvas = await loadHtml2Canvas();
       const { jsPDF } = await loadJsPDF();
-      if (typeof html2canvas !== 'function' || typeof jsPDF !== 'function') throw new Error('libraries did not load');
+      if (typeof jsPDF !== 'function') throw new Error('jsPDF did not load');
+
       const orientation = isPortrait ? 'portrait' : 'landscape';
       const pdf = new jsPDF({ unit: 'in', format: 'letter', orientation });
       const pageW = pdf.internal.pageSize.getWidth();
       const pageH = pdf.internal.pageSize.getHeight();
-      const wrappers = Array.from(document.querySelectorAll('[data-export-page="true"]')) as HTMLElement[];
-      if (!wrappers.length) throw new Error('nothing to export');
-      const targetPx = exportQuality >= 80 ? 1700 : 1275;
+
+      // Render at ~150dpi on letter
+      const PX_W = Math.round(pageW * 150);
+      const PX_H = Math.round(pageH * 150);
+      const cols = eff.columns;
+      const rows = eff.rows;
+      const cellW = PX_W / cols;
+      const cellH = PX_H / rows;
+      const bgColor = eff.bgColor || '#000000';
+      const scale = (eff.imageScale || 98) / 100;
+      const showNames = eff.showFileNames;
+      const nameFontSize = Math.round((eff.fileNameSize || 10) * (PX_W / 850));
+      const nameOpacity = (eff.fileNameOpacity ?? 55) / 100;
+
+      const nonEmptyPages = sheet.pages.filter((p: any) => p.items.length > 0);
+      if (!nonEmptyPages.length) throw new Error('nothing to export');
+
       let added = 0;
-      for (let i = 0; i < wrappers.length; i++) {
-        stage = `rendering page ${i + 1} of ${wrappers.length}`;
-        const el = wrappers[i];
-        const scale = Math.min(2, Math.max(1, targetPx / (el.offsetWidth || 850)));
-        const canvas = await html2canvas(el, { scale, useCORS: true, logging: false, backgroundColor: eff.bgColor || '#000', imageTimeout: 15000, removeContainer: true });
+      for (const page of nonEmptyPages) {
+        stage = `rendering page ${added + 1} of ${nonEmptyPages.length}`;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = PX_W;
+        canvas.height = PX_H;
+        const ctx = canvas.getContext('2d')!;
+
+        // background
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, PX_W, PX_H);
+
+        // draw each frame
+        const drawPromises = page.items.map((item: any, idx: number) => {
+          return new Promise<void>((resolve) => {
+            const col = idx % cols;
+            const row = Math.floor(idx / cols);
+            const x = col * cellW;
+            const y = row * cellH;
+
+            const img = new window.Image();
+            img.onload = () => {
+              // scale around cell center
+              const drawW = cellW * scale;
+              const drawH = cellH * scale;
+              const offsetX = x + (cellW - drawW) / 2;
+              const offsetY = y + (cellH - drawH) / 2;
+
+              // clip to cell
+              ctx.save();
+              ctx.beginPath();
+              ctx.rect(x, y, cellW, cellH);
+              ctx.clip();
+
+              // cover-fit the image into the scaled cell
+              const imgAspect = img.width / img.height;
+              const cellAspect = drawW / drawH;
+              let sx = 0, sy = 0, sw = img.width, sh = img.height;
+              if (imgAspect > cellAspect) {
+                sw = img.height * cellAspect;
+                sx = (img.width - sw) / 2;
+              } else {
+                sh = img.width / cellAspect;
+                sy = (img.height - sh) / 2;
+              }
+              ctx.drawImage(img, sx, sy, sw, sh, offsetX, offsetY, drawW, drawH);
+
+              // filename bar
+              if (showNames && item.filename) {
+                const barH = nameFontSize * 2.2;
+                ctx.fillStyle = `rgba(0,0,0,${nameOpacity})`;
+                ctx.fillRect(x, y + cellH - barH, cellW, barH);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = `${nameFontSize}px monospace`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                // truncate long names
+                let label = item.filename;
+                while (ctx.measureText(label).width > cellW - 8 && label.length > 4) label = label.slice(0, -4) + '…';
+                ctx.fillText(label, x + cellW / 2, y + cellH - barH / 2);
+              }
+
+              ctx.restore();
+              resolve();
+            };
+            img.onerror = () => resolve();
+            img.src = item.data;
+          });
+        });
+
+        await Promise.all(drawPromises);
+
         const imgData = canvas.toDataURL('image/jpeg', exportQuality / 100);
         canvas.width = 0; canvas.height = 0;
         if (added > 0) pdf.addPage('letter', orientation);
@@ -665,6 +746,7 @@ const SheetEditor = ({ project, sheet, eff, updateSheet, onCommit, draggedItem, 
         added++;
         await new Promise((r) => setTimeout(r, 0));
       }
+
       stage = 'saving file';
       pdf.save(`${(project.name + '_' + sheet.name).replace(/\s+/g, '_')}.pdf`);
       addToast('PDF saved.', 'success');
