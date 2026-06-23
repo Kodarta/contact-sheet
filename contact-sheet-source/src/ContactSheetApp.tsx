@@ -666,17 +666,34 @@ const SheetEditor = ({ project, sheet, eff, updateSheet, onCommit, draggedItem, 
             <input type="range" min="10" max="100" value={eff.imageScale} onChange={(e) => updateSheet(sheet.id, (s: any) => ({ ...s, settingsOverride: { ...s.settingsOverride, imageScale: parseInt(e.target.value) } }))} className="w-20 accent-amber-500" />
             <span className="font-mono text-xs text-neutral-300 tabular-nums w-8">{eff.imageScale}%</span>
           </div>
-          {/* Filename toggle — quick access above the canvas */}
-          <label className="flex items-center gap-1.5 cursor-pointer px-3 border-r border-neutral-700" title="Show/hide filenames on frames">
-            <input type="checkbox" checked={eff.showFileNames} onChange={(e) => updateSheet(sheet.id, (s: any) => ({ ...s, settingsOverride: { ...s.settingsOverride, showFileNames: e.target.checked } }))} className="w-3.5 h-3.5 accent-amber-500" />
-            <span className="text-sm text-neutral-400 select-none">Filenames</span>
-          </label>
           <button onClick={autoFill} className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 px-3 py-2 rounded-lg text-sm font-semibold border border-amber-500/20 flex items-center gap-1.5 transition-colors"><ArrowRight size={15} /> Auto-fill</button>
           <button onClick={() => setIsFullscreen(!isFullscreen)} className="text-neutral-400 hover:text-amber-400 p-2 rounded-lg hover:bg-white/5 transition-colors" title="Fullscreen">{isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}</button>
           <button onClick={clearSheet} className="text-neutral-400 hover:text-red-500 p-2 rounded-lg hover:bg-white/5 transition-colors" title="Clear sheet"><Trash2 size={18} /></button>
           <button onClick={openSettings} className="text-neutral-400 hover:text-amber-400 p-2 rounded-lg hover:bg-white/5 transition-colors" title="Sheet settings"><Settings size={18} /></button>
           <button onClick={() => setIsExportModalOpen(true)} className="bg-amber-500 hover:bg-amber-400 text-neutral-950 px-4 py-2 rounded-lg font-semibold flex items-center gap-2 transition-colors"><FileDown size={17} /> Export</button>
         </div>
+      </div>
+
+      {/* secondary toolbar — filename controls, always visible for live preview */}
+      <div className="h-11 bg-neutral-950 border-b border-neutral-800 flex items-center px-5 gap-6 no-print shrink-0">
+        <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-neutral-400 hover:text-white transition-colors select-none">
+          <input type="checkbox" checked={eff.showFileNames} onChange={(e) => updateSheet(sheet.id, (s: any) => ({ ...s, settingsOverride: { ...s.settingsOverride, showFileNames: e.target.checked } }))} className="w-3.5 h-3.5 accent-amber-500" />
+          Filenames
+        </label>
+        {eff.showFileNames && (
+          <>
+            <div className="flex items-center gap-2 border-l border-neutral-800 pl-6">
+              <span className="text-xs text-neutral-500 uppercase tracking-wider font-mono">Size</span>
+              <input type="range" min="7" max="20" value={eff.fileNameSize || 10} onChange={(e) => updateSheet(sheet.id, (s: any) => ({ ...s, settingsOverride: { ...s.settingsOverride, fileNameSize: parseInt(e.target.value) } }))} className="w-24 accent-amber-500" />
+              <span className="font-mono text-xs text-neutral-400 tabular-nums w-6">{eff.fileNameSize || 10}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-neutral-500 uppercase tracking-wider font-mono">Opacity</span>
+              <input type="range" min="0" max="100" value={eff.fileNameOpacity ?? 55} onChange={(e) => updateSheet(sheet.id, (s: any) => ({ ...s, settingsOverride: { ...s.settingsOverride, fileNameOpacity: parseInt(e.target.value) } }))} className="w-24 accent-amber-500" />
+              <span className="font-mono text-xs text-neutral-400 tabular-nums w-8">{eff.fileNameOpacity ?? 55}%</span>
+            </div>
+          </>
+        )}
       </div>
 
       {/* canvas */}
@@ -963,6 +980,19 @@ export default function ContactSheetApp() {
           {/* left rail */}
           <div className="w-14 bg-black flex flex-col items-center py-4 gap-3 no-print border-r border-neutral-800 z-[40]">
             <button onClick={() => { setView('dashboard'); setOpenProjectId(null); setOpenSheetId(null); }} className="text-neutral-400 hover:text-amber-400 p-2.5 rounded-xl hover:bg-neutral-800 transition-colors" title="Back to projects"><ArrowLeft size={22} /></button>
+            {/* Project name — vertical, click to rename */}
+            <button
+              onClick={() => {
+                const name = window.prompt('Rename project:', openProject.name);
+                if (name?.trim()) commit({ ...openProject, name: name.trim() });
+              }}
+              className="flex-1 flex items-center justify-center"
+              title="Rename project"
+            >
+              <span className="text-neutral-600 hover:text-amber-400 transition-colors font-mono text-[10px] uppercase tracking-widest font-bold truncate" style={{ writingMode: 'vertical-rl', textOrientation: 'mixed', maxHeight: 160 }}>
+                {openProject.name}
+              </span>
+            </button>
             <div className="w-6 h-px bg-neutral-800" />
             <button onClick={undo} disabled={past.current.length === 0} className="text-neutral-400 hover:text-amber-400 p-2.5 rounded-xl hover:bg-neutral-800 transition-colors disabled:opacity-30" title="Undo (Cmd+Z)"><Undo2 size={20} /></button>
             <button onClick={redo} disabled={future.current.length === 0} className="text-neutral-400 hover:text-amber-400 p-2.5 rounded-xl hover:bg-neutral-800 transition-colors disabled:opacity-30" title="Redo (Cmd+Shift+Z)"><Redo2 size={20} /></button>
@@ -1054,16 +1084,6 @@ export default function ContactSheetApp() {
             <div><label className="block text-sm text-neutral-300 mb-1">Columns</label><input type="number" min="1" max="10" value={eff.columns} onChange={(e) => updateSetting('columns', parseInt(e.target.value) || 1)} className="w-full bg-neutral-800 border border-neutral-700 text-white p-2 rounded-lg font-mono focus:ring-2 focus:ring-amber-500 outline-none" /></div>
             <div><label className="block text-sm text-neutral-300 mb-1">Rows</label><input type="number" min="1" max="15" value={eff.rows} onChange={(e) => updateSetting('rows', parseInt(e.target.value) || 1)} className="w-full bg-neutral-800 border border-neutral-700 text-white p-2 rounded-lg font-mono focus:ring-2 focus:ring-amber-500 outline-none" /></div>
           </div>
-          <label className="flex items-center justify-between py-1 cursor-pointer">
-            <span className="text-sm text-neutral-300">Show filenames</span>
-            <input type="checkbox" checked={eff.showFileNames} onChange={(e) => updateSetting('showFileNames', e.target.checked)} className="w-5 h-5 accent-amber-500" />
-          </label>
-          {eff.showFileNames && (
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="block text-xs text-neutral-400 mb-1">Label size {eff.fileNameSize}px</label><input type="range" min="7" max="20" value={eff.fileNameSize} onChange={(e) => updateSetting('fileNameSize', parseInt(e.target.value))} className="w-full accent-amber-500" /></div>
-              <div><label className="block text-xs text-neutral-400 mb-1">Bar opacity {eff.fileNameOpacity}%</label><input type="range" min="0" max="100" value={eff.fileNameOpacity} onChange={(e) => updateSetting('fileNameOpacity', parseInt(e.target.value))} className="w-full accent-amber-500" /></div>
-            </div>
-          )}
           <div className="flex gap-3 pt-2 border-t border-neutral-800">
             <button onClick={resetSettings} className="flex-1 bg-neutral-800 text-neutral-300 rounded-lg py-2.5 font-medium hover:bg-neutral-700 transition-colors text-sm">Reset to project defaults</button>
             <button onClick={() => setSettingsModal({ open: false })} className="flex-1 bg-amber-500 text-neutral-950 rounded-lg py-2.5 font-semibold hover:bg-amber-400 transition-colors">Done</button>
