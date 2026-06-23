@@ -752,7 +752,7 @@ const SheetEditor = ({ project, sheet, eff, updateSheet, onCommit, draggedItem, 
                 onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOverPageId(null); }}
                 onDrop={handleDropOnSheet}
               >
-                <div className="w-full h-full grid gap-0" style={{ gridTemplateColumns: `repeat(${eff.columns}, minmax(0,1fr))`, gridTemplateRows: `repeat(${eff.rows}, minmax(0,1fr))` }}>
+                <div className="w-full h-full grid gap-0" style={{ gridTemplateColumns: `repeat(${eff.columns}, minmax(0,1fr))`, gridAutoRows: `${100 / eff.rows}%` }}>
                   {page.items.map((item: any) => {
                     const dragging = draggedItem?.item?.id === item.id;
                     const target = dragOverFrameId === item.id && !dragging;
