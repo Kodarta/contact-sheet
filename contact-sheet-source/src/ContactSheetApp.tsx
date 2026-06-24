@@ -354,9 +354,10 @@ const DashboardView = ({ projects, isDark, onToggleTheme, onNewProject, onOpenPr
 // Finder-style tree nav
 // ===========================================================================
 const TreeRow = ({ node, depth, openSheetId, collapsed, onToggleCollapse, onOpenSheet, onRename, onDelete,
-  dragId, dropTarget, onDragStart, onDragEnd, onDropInto, onDropBefore, frameCountFor }: any) => {
+  dragId, dropTarget, selectedIds, onDragStart, onDragEnd, onDropInto, onDropBefore, frameCountFor, onNodeClick }: any) => {
   const isFolder = node.type === 'folder';
   const isOpen = openSheetId === node.id;
+  const isSelected = selectedIds?.includes(node.id);
   const isCollapsed = collapsed[node.id];
   const isDragging = dragId === node.id;
   const intoActive = dropTarget?.kind === 'into' && dropTarget.id === node.id;
@@ -364,7 +365,6 @@ const TreeRow = ({ node, depth, openSheetId, collapsed, onToggleCollapse, onOpen
 
   return (
     <div className={isDragging ? 'opacity-40' : ''}>
-      {/* insertion line (drop before) */}
       <div className={`h-0.5 -mb-0.5 mx-2 rounded-full transition-colors ${beforeActive ? 'bg-amber-400' : 'bg-transparent'}`} />
       <div
         draggable
@@ -375,9 +375,9 @@ const TreeRow = ({ node, depth, openSheetId, collapsed, onToggleCollapse, onOpen
         onDrop={(e) => { e.preventDefault(); e.stopPropagation(); onPerformDrop(node, isFolder); }}
         style={{ paddingLeft: depth * 16 + 8 }}
         className={`group/row flex items-center gap-1.5 pr-2 py-1.5 rounded-lg cursor-pointer select-none transition-colors
-          ${isOpen ? 'bg-amber-500/15 text-amber-300' : 'text-neutral-300 hover:bg-white/5'}
+          ${isOpen ? 'bg-amber-500/15 text-amber-300' : isSelected ? 'bg-amber-500/10 text-amber-200' : 'text-neutral-300 hover:bg-white/5'}
           ${intoActive ? 'ring-2 ring-amber-400 bg-amber-400/10' : ''}`}
-        onClick={() => { if (isFolder) onToggleCollapse(node.id); else onOpenSheet(node.id); }}
+        onClick={(e) => onNodeClick ? onNodeClick(e, node) : (isFolder ? onToggleCollapse(node.id) : onOpenSheet(node.id))}
       >
         {isFolder ? (
           <span className="text-neutral-500 shrink-0">{isCollapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}</span>
@@ -397,7 +397,7 @@ const TreeRow = ({ node, depth, openSheetId, collapsed, onToggleCollapse, onOpen
           {node.children.length === 0 ? (
             <div style={{ paddingLeft: (depth + 1) * 16 + 24 }} className="py-1 text-[11px] text-neutral-600 italic">empty</div>
           ) : node.children.map((c: AnyNode) => (
-            <TreeRow key={c.id} node={c} depth={depth + 1} {...{ openSheetId, collapsed, onToggleCollapse, onOpenSheet, onRename, onDelete, dragId, dropTarget, onDragStart, onDragEnd, onDropInto, onDropBefore, frameCountFor }} />
+            <TreeRow key={c.id} node={c} depth={depth + 1} {...{ openSheetId, collapsed, onToggleCollapse, onOpenSheet, onRename, onDelete, dragId, dropTarget, selectedIds, onDragStart, onDragEnd, onDropInto, onDropBefore, frameCountFor, onNodeClick }} />
           ))}
         </div>
       )}
@@ -419,10 +419,38 @@ const FinderNav = ({ project, openSheetId, onOpenSheet, onMutate, onAddFolder, o
   const [collapsed, setCollapsed] = useState<any>({});
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<any>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [lastClickedId, setLastClickedId] = useState<string | null>(null);
   _setDropTarget = setDropTarget;
 
   const toggleCollapse = (id: string) => setCollapsed((c: any) => ({ ...c, [id]: !c[id] }));
   const frameCountFor = (sheet: AnyNode) => sheet.pages.reduce((n: number, p: any) => n + p.items.length, 0);
+
+  // Flatten visible nodes in order for shift-click range selection
+  const flatVisible = (nodes: AnyNode[], result: AnyNode[] = []): AnyNode[] => {
+    nodes.forEach((n) => { result.push(n); if (n.type === 'folder' && !collapsed[n.id]) flatVisible(n.children, result); });
+    return result;
+  };
+
+  const handleNodeClick = (e: React.MouseEvent, node: AnyNode) => {
+    if (node.type === 'folder') { toggleCollapse(node.id); return; }
+    if (e.metaKey || e.ctrlKey) {
+      setSelectedIds((prev) => prev.includes(node.id) ? prev.filter((id) => id !== node.id) : [...prev, node.id]);
+      setLastClickedId(node.id);
+    } else if (e.shiftKey && lastClickedId) {
+      const flat = flatVisible(project.tree);
+      const a = flat.findIndex((n) => n.id === lastClickedId);
+      const b = flat.findIndex((n) => n.id === node.id);
+      if (a !== -1 && b !== -1) {
+        const range = flat.slice(Math.min(a, b), Math.max(a, b) + 1).map((n) => n.id);
+        setSelectedIds((prev) => Array.from(new Set([...prev, ...range])));
+      }
+    } else {
+      setSelectedIds([]);
+      setLastClickedId(node.id);
+      onOpenSheet(node.id);
+    }
+  };
 
   const move = (parentId: string | null, beforeId: string | null) => {
     if (!dragId) return;
@@ -469,11 +497,11 @@ const FinderNav = ({ project, openSheetId, onOpenSheet, onMutate, onAddFolder, o
         ) : project.tree.map((n: AnyNode) => (
           <TreeRow key={n.id} node={n} depth={0} {...{
             openSheetId, collapsed, onToggleCollapse: toggleCollapse, onOpenSheet, onRename, onDelete,
-            dragId, dropTarget,
+            dragId, dropTarget, selectedIds,
             onDragStart: setDragId, onDragEnd: () => { setDragId(null); setDropTarget(null); },
             onDropInto: (id: string) => move(id, null),
             onDropBefore: (id: string) => move(null, id),
-            frameCountFor,
+            frameCountFor, onNodeClick: handleNodeClick,
           }} />
         ))}
         <div className="h-12" onDragEnter={() => { if (dragId) { setDropTarget(null); _pendingDrop = () => move(null, null); } }} />
@@ -488,7 +516,13 @@ const FinderNav = ({ project, openSheetId, onOpenSheet, onMutate, onAddFolder, o
 const StagingSidebar = ({ project, onMutate, draggedItem, setDraggedItem, hasOpenSheet }: any) => {
   const fileRef = useRef<HTMLInputElement>(null);
   const [lastIdx, setLastIdx] = useState<number | null>(null);
+  const [searchQ, setSearchQ] = useState('');
+  const [unplacedOnly, setUnplacedOnly] = useState(false);
   const staging = project.staging || [];
+
+  // Build set of all placed data URLs across the whole project tree
+  const placedData = new Set<string>();
+  walk(project.tree || [], (n) => { if (n.type === 'sheet') n.pages.forEach((p: any) => p.items.forEach((i: any) => placedData.add(i.data))); });
 
   const upload = async (e: any) => {
     const files = Array.from(e.target.files) as File[];
@@ -498,43 +532,93 @@ const StagingSidebar = ({ project, onMutate, draggedItem, setDraggedItem, hasOpe
     onMutate({ ...project, staging: [...staging, ...added] });
     e.target.value = '';
   };
-  const toggle = (idx: number, ev: any) => {
+
+  // Filter staging by search + unplaced toggle
+  const visible = staging.filter((img: any) => {
+    if (unplacedOnly && placedData.has(img.data)) return false;
+    if (searchQ && !img.filename?.toLowerCase().includes(searchQ.toLowerCase())) return false;
+    return true;
+  });
+
+  const toggle = (img: any, ev: any) => {
+    const visIdx = visible.indexOf(img);
+    const stagingIdx = staging.indexOf(img);
     const next = staging.map((s: any) => ({ ...s }));
-    if (ev.shiftKey && lastIdx !== null) { const a = Math.min(idx, lastIdx), b = Math.max(idx, lastIdx); for (let i = a; i <= b; i++) next[i].selected = true; }
-    else { next[idx].selected = !next[idx].selected; setLastIdx(idx); }
+    if (ev.shiftKey && lastIdx !== null) {
+      const a = Math.min(visIdx, lastIdx), b = Math.max(visIdx, lastIdx);
+      visible.slice(a, b + 1).forEach((v: any) => { const i = staging.indexOf(v); if (i !== -1) next[i].selected = true; });
+    } else {
+      next[stagingIdx].selected = !next[stagingIdx].selected;
+      setLastIdx(visIdx);
+    }
     onMutate({ ...project, staging: next });
   };
-  const selectAll = () => { const all = staging.every((s: any) => s.selected); onMutate({ ...project, staging: staging.map((s: any) => ({ ...s, selected: !all })) }); };
+
+  const selectAll = () => {
+    const allVisible = visible.every((s: any) => s.selected);
+    onMutate({ ...project, staging: staging.map((s: any) => visible.includes(s) ? { ...s, selected: !allVisible } : s) });
+  };
   const delSel = () => { onMutate({ ...project, staging: staging.filter((s: any) => !s.selected) }); setLastIdx(null); };
   const selCount = staging.filter((s: any) => s.selected).length;
+  const unplacedCount = staging.filter((s: any) => !placedData.has(s.data)).length;
 
   return (
     <div className="w-72 bg-neutral-900 border-r border-neutral-800 flex flex-col h-full no-print">
       <div className="p-4 border-b border-neutral-800">
-        <h2 className="font-semibold flex items-center gap-2 text-white mb-3"><ImageIcon size={17} className="text-amber-400" /> Staging <span className="ml-auto font-mono text-xs text-neutral-500 tabular-nums">{staging.length}</span></h2>
+        <h2 className="font-semibold flex items-center gap-2 text-white mb-3">
+          <ImageIcon size={17} className="text-amber-400" /> Staging
+          <span className="ml-auto font-mono text-xs text-neutral-500 tabular-nums">{staging.length}</span>
+        </h2>
         <input type="file" multiple accept="image/*" className="hidden" ref={fileRef} onChange={upload} />
         <button onClick={() => fileRef.current?.click()} className="w-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 py-2.5 rounded-xl font-medium transition-colors flex justify-center items-center gap-2 border border-amber-500/20"><UploadCloud size={17} /> Upload photos</button>
-        <div className="mt-3 flex gap-2 text-sm">
+
+        {/* Search */}
+        <div className="mt-3 flex items-center gap-2 bg-neutral-800 border border-neutral-700 rounded-lg px-2.5 py-1.5">
+          <Search size={13} className="text-neutral-500 shrink-0" />
+          <input value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Search filenames…" className="flex-1 bg-transparent text-sm text-neutral-200 outline-none placeholder:text-neutral-600 min-w-0" />
+          {searchQ && <button onClick={() => setSearchQ('')} className="text-neutral-500 hover:text-white transition-colors shrink-0"><X size={13} /></button>}
+        </div>
+
+        {/* Unplaced toggle */}
+        <div className="mt-2 flex items-center justify-between">
+          <label className="flex items-center gap-2 cursor-pointer text-xs text-neutral-400 hover:text-white transition-colors select-none">
+            <input type="checkbox" checked={unplacedOnly} onChange={(e) => setUnplacedOnly(e.target.checked)} className="w-3 h-3 accent-amber-500" />
+            Unplaced only
+            <span className="font-mono text-neutral-600">({unplacedCount})</span>
+          </label>
+          <span className="font-mono text-[10px] text-neutral-600">{visible.length} shown</span>
+        </div>
+
+        <div className="mt-2 flex gap-2 text-sm">
           <button onClick={selectAll} className="flex-1 bg-white/5 hover:bg-white/10 text-neutral-300 py-1.5 rounded-full font-medium transition-colors">{selCount === staging.length && selCount > 0 ? 'Deselect all' : 'Select all'}</button>
           {selCount > 0 && <button onClick={delSel} className="px-4 bg-red-900/30 hover:bg-red-900/50 text-red-400 py-1.5 rounded-full font-medium transition-colors">Delete ({selCount})</button>}
         </div>
       </div>
+
       <div className="flex-1 overflow-y-auto p-3 bg-neutral-950">
         {staging.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-neutral-600 p-4 text-center"><ImageIcon size={30} className="mb-2 opacity-20" /><p className="text-sm">Upload photos here, then drag or auto-fill them onto a sheet.</p></div>
+        ) : visible.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-neutral-600 p-4 text-center"><Search size={24} className="mb-2 opacity-20" /><p className="text-sm">{unplacedOnly ? 'All photos are placed.' : 'No matches.'}</p></div>
         ) : (
           <div className="grid grid-cols-2 gap-2.5">
-            {staging.map((img: any, idx: number) => {
+            {visible.map((img: any, visIdx: number) => {
+              const isPlaced = placedData.has(img.data);
               return (
                 <div key={img.id} draggable
                   onDragStart={() => setDraggedItem({ source: 'staging', item: img })}
                   onDragEnd={() => setDraggedItem(null)}
-                  onClick={(e) => toggle(idx, e)}
+                  onClick={(e) => toggle(img, e)}
                   className={`aspect-square rounded-xl cursor-pointer bg-cover bg-center border-2 transition-all overflow-hidden relative
                     ${img.selected ? 'border-amber-400 ring-2 ring-amber-500/30 scale-95' : 'border-transparent hover:border-neutral-600'}
                     ${draggedItem?.item?.id === img.id ? 'opacity-50 grayscale' : ''}`}
                   style={{ backgroundImage: `url(${img.data})` }} title={img.filename}>
                   {img.selected && <div className="absolute top-1.5 right-1.5 bg-amber-500 text-neutral-950 rounded-full p-0.5 shadow z-10 pointer-events-none"><CheckSquare size={13} /></div>}
+                  {isPlaced && !img.selected && (
+                    <div className="absolute inset-0 bg-neutral-950/50 flex items-end justify-center pb-1.5 pointer-events-none">
+                      <span className="bg-neutral-900/90 text-neutral-400 text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded">Placed</span>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -778,7 +862,8 @@ const SheetEditor = ({ project, sheet, eff, updateSheet, onCommit, draggedItem, 
           <div className="flex items-center gap-2 px-3 border-r border-neutral-700">
             <span className="text-sm text-neutral-400">Scale</span>
             <input type="range" min="10" max="100" value={eff.imageScale} onChange={(e) => updateSheet(sheet.id, (s: any) => ({ ...s, settingsOverride: { ...s.settingsOverride, imageScale: parseInt(e.target.value) } }))} className="w-20 accent-amber-500" />
-            <span className="font-mono text-xs text-neutral-300 tabular-nums w-8">{eff.imageScale}%</span>
+            <input type="number" min="10" max="100" value={eff.imageScale} onChange={(e) => { const v = Math.min(100, Math.max(10, parseInt(e.target.value) || 10)); updateSheet(sheet.id, (s: any) => ({ ...s, settingsOverride: { ...s.settingsOverride, imageScale: v } })); }} className="w-12 bg-neutral-800 border border-neutral-700 text-white text-xs font-mono text-center rounded px-1 py-0.5 outline-none focus:border-amber-500" />
+            <span className="text-xs text-neutral-500 -ml-1">%</span>
           </div>
           <button onClick={autoFill} className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 px-3 py-2 rounded-lg text-sm font-semibold border border-amber-500/20 flex items-center gap-1.5 transition-colors"><ArrowRight size={15} /> Auto-fill</button>
           <button onClick={() => setIsFullscreen(!isFullscreen)} className="text-neutral-400 hover:text-amber-400 p-2 rounded-lg hover:bg-white/5 transition-colors" title="Fullscreen">{isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}</button>
@@ -799,12 +884,13 @@ const SheetEditor = ({ project, sheet, eff, updateSheet, onCommit, draggedItem, 
             <div className="flex items-center gap-2 border-l border-neutral-800 pl-6">
               <span className="text-xs text-neutral-500 uppercase tracking-wider font-mono">Size</span>
               <input type="range" min="7" max="20" value={eff.fileNameSize || 10} onChange={(e) => updateSheet(sheet.id, (s: any) => ({ ...s, settingsOverride: { ...s.settingsOverride, fileNameSize: parseInt(e.target.value) } }))} className="w-24 accent-amber-500" />
-              <span className="font-mono text-xs text-neutral-400 tabular-nums w-6">{eff.fileNameSize || 10}</span>
+              <input type="number" min="7" max="20" value={eff.fileNameSize || 10} onChange={(e) => { const v = Math.min(20, Math.max(7, parseInt(e.target.value) || 7)); updateSheet(sheet.id, (s: any) => ({ ...s, settingsOverride: { ...s.settingsOverride, fileNameSize: v } })); }} className="w-10 bg-neutral-800 border border-neutral-700 text-white text-xs font-mono text-center rounded px-1 py-0.5 outline-none focus:border-amber-500" />
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs text-neutral-500 uppercase tracking-wider font-mono">Opacity</span>
               <input type="range" min="0" max="100" value={eff.fileNameOpacity ?? 55} onChange={(e) => updateSheet(sheet.id, (s: any) => ({ ...s, settingsOverride: { ...s.settingsOverride, fileNameOpacity: parseInt(e.target.value) } }))} className="w-24 accent-amber-500" />
-              <span className="font-mono text-xs text-neutral-400 tabular-nums w-8">{eff.fileNameOpacity ?? 55}%</span>
+              <input type="number" min="0" max="100" value={eff.fileNameOpacity ?? 55} onChange={(e) => { const v = Math.min(100, Math.max(0, parseInt(e.target.value) || 0)); updateSheet(sheet.id, (s: any) => ({ ...s, settingsOverride: { ...s.settingsOverride, fileNameOpacity: v } })); }} className="w-12 bg-neutral-800 border border-neutral-700 text-white text-xs font-mono text-center rounded px-1 py-0.5 outline-none focus:border-amber-500" />
+              <span className="text-xs text-neutral-500 -ml-1">%</span>
             </div>
           </>
         )}
@@ -818,6 +904,10 @@ const SheetEditor = ({ project, sheet, eff, updateSheet, onCommit, draggedItem, 
         `}} />
         {sheet.pages.map((page: any, index: number) => {
           if (isExporting && page.items.length === 0) return null;
+          // build a frequency map of all data URLs across all pages for dupe detection
+          const allData = sheet.pages.flatMap((p: any) => p.items.map((i: any) => i.data));
+          const dataCount: Record<string, number> = {};
+          allData.forEach((d: string) => { dataCount[d] = (dataCount[d] || 0) + 1; });
           return (
             <div key={page.id} className={`flex flex-col w-full items-center gap-2 ${maxWidthClass}`}>
               {!isExporting && (
@@ -838,6 +928,7 @@ const SheetEditor = ({ project, sheet, eff, updateSheet, onCommit, draggedItem, 
                   {page.items.map((item: any) => {
                     const dragging = draggedItem?.item?.id === item.id;
                     const target = dragOverFrameId === item.id && !dragging;
+                    const isDupe = dataCount[item.data] > 1;
                     return (
                       <div key={item.id} draggable
                         onDragStart={(e) => { e.stopPropagation(); setDraggedItem({ source: 'frame', item }); }}
@@ -851,6 +942,7 @@ const SheetEditor = ({ project, sheet, eff, updateSheet, onCommit, draggedItem, 
                       >
                         {target && <div className="absolute inset-y-1 left-0 w-1.5 z-30 rounded-full bg-amber-400 shadow-[0_0_10px_2px_rgba(251,191,36,.85)] pointer-events-none" />}
                         {target && <div className="absolute inset-0 z-20 ring-2 ring-inset ring-amber-400/50 pointer-events-none" />}
+                        {isDupe && <div className="absolute top-1.5 left-1.5 bg-neutral-900/90 text-amber-300 text-[9px] uppercase font-mono font-bold tracking-wider px-1.5 py-0.5 rounded z-20 pointer-events-none shadow">Dupe</div>}
                         <img src={item.data} alt={item.filename || ''} className="w-full h-full object-cover object-center pointer-events-none" style={{ transform: `scale(${eff.imageScale / 100})` }} />
                         {eff.showFileNames && item.filename && (
                           <div className="absolute bottom-0 left-0 right-0 text-white text-center font-mono whitespace-normal break-words leading-tight max-h-[45%] overflow-hidden z-10 pointer-events-none"
